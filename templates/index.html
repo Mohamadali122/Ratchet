@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ratchet Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    body { background: #0f1117; color: #e2e8f0; font-family: 'Inter', 'Segoe UI', sans-serif; }
+    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; }
+    .badge-done    { background:#064e3b; color:#6ee7b7; }
+    .badge-ready   { background:#1e3a5f; color:#93c5fd; }
+    .badge-waiting { background:#292524; color:#a8a29e; }
+    #log-box { font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 12px;
+               background:#0a0c12; border:1px solid #2d3148; border-radius:8px;
+               height:320px; overflow-y:auto; padding:12px; }
+    #log-box p { margin:0; line-height:1.6; white-space:pre; }
+    .pill { display:inline-block; padding:2px 10px; border-radius:9999px; font-size:11px; font-weight:600; }
+    .spinner { display:inline-block; width:10px; height:10px; border:2px solid #6366f1;
+               border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    input, select { background:#0f1117; border:1px solid #3d4168; border-radius:6px;
+                    color:#e2e8f0; padding:6px 10px; font-size:13px; }
+    input:focus, select:focus { outline:2px solid #6366f1; border-color:transparent; }
+    button { cursor:pointer; transition:opacity .15s; }
+    button:hover { opacity:.85; }
+  </style>
+</head>
+<body class="min-h-screen p-6">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center gap-3">
+      <div class="text-2xl font-bold tracking-tight text-indigo-400">&#x2699; Ratchet</div>
+      <span id="branch-badge" class="pill" style="background:#312e81;color:#a5b4fc;">-</span>
+    </div>
+    <div class="flex items-center gap-2 text-sm text-slate-400" id="loop-status">
+      <span id="loop-dot" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
+      <span id="loop-label">Idle</span>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="card p-4 text-center">
+      <div class="text-3xl font-bold text-indigo-400" id="stat-done">0</div>
+      <div class="text-xs text-slate-500 mt-1 uppercase tracking-widest">Complete</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-3xl font-bold text-blue-400" id="stat-ready">0</div>
+      <div class="text-xs text-slate-500 mt-1 uppercase tracking-widest">Ready</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-3xl font-bold text-slate-400" id="stat-total">0</div>
+      <div class="text-xs text-slate-500 mt-1 uppercase tracking-widest">Total</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Stories panel -->
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold text-slate-200">Stories</h2>
+        <span class="text-xs text-slate-500" id="project-name">-</span>
+      </div>
+      <div id="stories-list" class="space-y-2">
+        <p class="text-slate-500 text-sm">Loading...</p>
+      </div>
+    </div>
+
+    <!-- Right column: controls + log -->
+    <div class="flex flex-col gap-5">
+
+      <!-- Run controls -->
+      <div class="card p-5">
+        <h2 class="font-semibold text-slate-200 mb-4">Run Loop</h2>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label class="text-xs text-slate-500 mb-1 block">AI Provider</label>
+            <select id="ctl-tool" class="w-full">
+              <option value="claude">claude (default)</option>
+              <option value="ollama/codellama">ollama/codellama</option>
+              <option value="ollama/llama3">ollama/llama3</option>
+              <option value="openai/gpt-4o">openai/gpt-4o</option>
+              <option value="openai/gpt-4-turbo">openai/gpt-4-turbo</option>
+              <option value="deepseek/deepseek-coder">deepseek/deepseek-coder</option>
+              <option value="gemini">gemini</option>
+              <option value="lmstudio/local-model">lmstudio/local-model</option>
+              <option value="codex">codex</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-500 mb-1 block">Max Iterations</label>
+            <input id="ctl-maxiter" type="number" value="20" min="1" max="100" class="w-full" />
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mb-4">
+          <input type="checkbox" id="ctl-parallel" class="w-4 h-4 accent-indigo-500" />
+          <label for="ctl-parallel" class="text-sm text-slate-400 select-none">Parallel mode (run ready stories simultaneously)</label>
+        </div>
+        <div class="flex gap-2">
+          <button id="btn-run" onclick="startLoop()"
+            class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg py-2 text-sm">
+            &#9654; Run Loop
+          </button>
+          <button id="btn-stop" onclick="stopLoop()"
+            class="flex-1 bg-rose-800 hover:bg-rose-700 text-white font-semibold rounded-lg py-2 text-sm">
+            &#9632; Stop
+          </button>
+        </div>
+      </div>
+
+      <!-- Log viewer -->
+      <div class="card p-5 flex-1">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-slate-200">Live Log</h2>
+          <button onclick="clearLog()" class="text-xs text-slate-500 hover:text-slate-300">Clear</button>
+        </div>
+        <div id="log-box"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // -----------------------------------------------------------------------
+    // State polling
+    // -----------------------------------------------------------------------
+    async function poll() {
+      try {
+        const res  = await fetch('/api/status');
+        const data = await res.json();
+        renderStatus(data);
+      } catch(e) { /* ignore */ }
+    }
+
+    function renderStatus(d) {
+      document.getElementById('stat-done').textContent  = d.done;
+      document.getElementById('stat-ready').textContent = d.ready;
+      document.getElementById('stat-total').textContent = d.total;
+      document.getElementById('project-name').textContent = d.name;
+      document.getElementById('branch-badge').textContent = d.branch;
+
+      const dot   = document.getElementById('loop-dot');
+      const label = document.getElementById('loop-label');
+      if (d.loop_running) {
+        dot.className   = 'w-2 h-2 rounded-full bg-green-400 inline-block animate-pulse';
+        label.textContent = 'Running';
+      } else {
+        dot.className   = 'w-2 h-2 rounded-full bg-slate-600 inline-block';
+        label.textContent = 'Idle';
+      }
+
+      renderStories(d.stories);
+    }
+
+    function renderStories(stories) {
+      const el = document.getElementById('stories-list');
+      if (!stories || stories.length === 0) {
+        el.innerHTML = '<p class="text-slate-500 text-sm">No stories. Run ratchet_state.py add-story.</p>';
+        return;
+      }
+
+      el.innerHTML = stories.map(s => {
+        const status = s._status || 'waiting';
+        const badgeClass = status === 'done' ? 'badge-done' : status === 'ready' ? 'badge-ready' : 'badge-waiting';
+        const badgeText  = status === 'done' ? 'DONE' : status === 'ready' ? 'READY' : 'WAIT';
+        const model  = s.model ? `<span class="text-xs text-slate-500 ml-1">${s.model}</span>` : '';
+        const deps   = s.depends_on && s.depends_on.length
+          ? `<span class="text-xs text-slate-600 ml-1">needs: ${s.depends_on.join(', ')}</span>` : '';
+        const resetBtn = status !== 'done' ? '' :
+          `<button onclick="resetStory('${s.id}')" class="text-xs text-slate-600 hover:text-rose-400 ml-2">reset</button>`;
+
+        return `
+          <div class="flex items-start gap-3 py-2 border-b border-slate-800 last:border-0">
+            <span class="pill ${badgeClass} mt-0.5 shrink-0">${badgeText}</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1 flex-wrap">
+                <span class="text-xs text-slate-500 shrink-0">${s.id}</span>
+                <span class="text-sm text-slate-200 truncate">${s.title}</span>
+                ${model}${deps}${resetBtn}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // -----------------------------------------------------------------------
+    // Log streaming (SSE)
+    // -----------------------------------------------------------------------
+    const logBox = document.getElementById('log-box');
+    let evtSource = null;
+
+    function startLogStream() {
+      if (evtSource) evtSource.close();
+      evtSource = new EventSource('/api/logs/stream');
+      evtSource.onmessage = e => {
+        const p = document.createElement('p');
+        p.textContent = e.data;
+        p.style.color = e.data.includes('COMPLETE') ? '#6ee7b7'
+                      : e.data.includes('BLOCKED')  ? '#fca5a5'
+                      : e.data.includes('WARNING')  ? '#fcd34d'
+                      : '#94a3b8';
+        logBox.appendChild(p);
+        logBox.scrollTop = logBox.scrollHeight;
+      };
+    }
+
+    function clearLog() { logBox.innerHTML = ''; }
+
+    // -----------------------------------------------------------------------
+    // Loop controls
+    // -----------------------------------------------------------------------
+    async function startLoop() {
+      const tool     = document.getElementById('ctl-tool').value;
+      const maxIter  = parseInt(document.getElementById('ctl-maxiter').value, 10);
+      const parallel = document.getElementById('ctl-parallel').checked;
+
+      const res  = await fetch('/api/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ tool, max_iter: maxIter, parallel }),
+      });
+      const data = await res.json();
+      appendLog(data.message, data.ok ? '#6ee7b7' : '#fca5a5');
+    }
+
+    async function stopLoop() {
+      const res  = await fetch('/api/stop', { method: 'POST' });
+      const data = await res.json();
+      appendLog(data.message, '#fcd34d');
+    }
+
+    async function resetStory(id) {
+      const res  = await fetch(`/api/stories/${id}/reset`, { method: 'POST' });
+      const data = await res.json();
+      appendLog(data.message || data.detail, data.ok ? '#6ee7b7' : '#fca5a5');
+    }
+
+    function appendLog(text, color) {
+      const p = document.createElement('p');
+      p.textContent = `[UI] ${text}`;
+      p.style.color = color || '#94a3b8';
+      logBox.appendChild(p);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // -----------------------------------------------------------------------
+    // Init
+    // -----------------------------------------------------------------------
+    poll();
+    setInterval(poll, 2000);
+    startLogStream();
+  </script>
+</body>
+</html>
