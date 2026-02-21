@@ -10,6 +10,7 @@ Usage:
 
 Install dependencies:
   pip install fastapi uvicorn
+  pip install openai   # only needed for openai/deepseek/lmstudio providers
 
 The UI auto-detects the .ratchet/ directory from --project-dir (default: cwd).
 """
@@ -29,9 +30,7 @@ from typing import Any, AsyncGenerator, Optional
 
 try:
     from fastapi import FastAPI, HTTPException, Request
-    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-    from fastapi.staticfiles import StaticFiles
-    from fastapi.templating import Jinja2Templates
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
     import uvicorn
 except ImportError:
     print("ERROR: Missing dependencies. Run: pip install fastapi uvicorn", file=sys.stderr)
@@ -47,13 +46,7 @@ LOGS_DIR: Path = Path("logs")
 
 app = FastAPI(title="Ratchet Dashboard", version="1.0.0")
 
-# ---------------------------------------------------------------------------
-# Template setup (inline -- no separate file needed)
-# ---------------------------------------------------------------------------
-
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-TEMPLATES_DIR.mkdir(exist_ok=True)
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # ---------------------------------------------------------------------------
 # State helpers
@@ -117,8 +110,8 @@ def _loop_running() -> bool:
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("index.html", {"request": request})
+async def dashboard() -> FileResponse:
+    return FileResponse(TEMPLATES_DIR / "index.html")
 
 
 @app.get("/api/status")
