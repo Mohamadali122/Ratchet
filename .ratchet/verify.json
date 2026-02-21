@@ -1,0 +1,11 @@
+{
+  "http_checks": [
+    { "url": "http://localhost/health", "expected_status": 200 }
+  ],
+  "docker_services": [],
+  "jwt_endpoint": null,
+  "custom_checks": [
+    { "name": "example: output file exists", "command": "test -s output/result.txt" },
+    { "name": "example: no syntax errors",   "command": "python -m py_compile main.py" }
+  ]
+}

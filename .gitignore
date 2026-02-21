@@ -1,0 +1,38 @@
+# Ratchet state files -- generated per project run, not committed
+.ratchet/prd.json
+.ratchet/progress.md
+
+# Project-specific output directories
+output/
+
+# Logs
+logs/*.log
+meta-prompt.txt
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.mypy_cache/
+.pytest_cache/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Environment / secrets
+.env
+*.env.local
+*.env.*.local
+.env.production
+
+# Claude Code
+.claude/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/settings.json
