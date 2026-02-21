@@ -584,6 +584,138 @@ Run Ratchet on project A, then project B in sequence from a wrapper script:
 
 ---
 
+## Future Work
+
+The items below are planned improvements. Contributions are welcome.
+
+### Multi-LLM Support
+
+Currently Ratchet calls whatever binary is passed via `--tool`. A proper multi-LLM adapter layer would let each story declare its preferred model, and Ratchet would handle the invocation differences automatically:
+
+| Provider | CLI / API | Status |
+| --- | --- | --- |
+| Claude Code | `claude --dangerously-skip-permissions -p` | Supported today |
+| OpenAI Codex / GPT-4o | `codex -p` / OpenAI API | Planned |
+| DeepSeek Coder | `deepseek -p` / API | Planned |
+| Gemini CLI | `gemini -p` | Planned |
+| Ollama (local) | `ollama run <model> -p` | Planned |
+| LM Studio (local) | OpenAI-compatible REST | Planned |
+
+Story-level model selection in `prd.json`:
+
+```json
+{
+  "id": "S1",
+  "title": "Scaffold boilerplate",
+  "model": "ollama/codellama",
+  "acceptance_criteria": ["..."],
+  "passes": false
+}
+```
+
+Expensive stories (architecture, complex logic) use a frontier model. Cheap stories (boilerplate, formatting, docs) use a local or low-cost model. This can cut API cost by 60–80% on large PRDs.
+
+---
+
+### Web UI Dashboard
+
+A real-time browser dashboard for monitoring loop progress:
+
+- Story completion table with live updates
+- Log streaming per iteration
+- Add / reset stories without touching JSON
+- BLOCKED reason display with retry button
+- Built with FastAPI + HTMX (no JavaScript framework required)
+
+---
+
+### Parallel Story Execution
+
+Run independent stories simultaneously in separate agent instances. Stories without `depends_on` relationships could be dispatched in parallel, reducing total wall-clock time significantly for large PRDs.
+
+```json
+{ "id": "S3", "depends_on": ["S1", "S2"], "title": "..." }
+```
+
+---
+
+### Story Dependency Graph
+
+Let stories declare explicit dependencies instead of relying on list order. Ratchet builds a DAG and executes in topological order, automatically parallelizing where possible.
+
+---
+
+### `ratchet doctor` — Preflight Check
+
+A command that validates the environment before running:
+
+```bash
+./ratchet_state.py doctor
+```
+
+Checks: `claude` installed and authenticated, `prd.json` valid schema, `verify.json` endpoints reachable, git configured with user identity, required tools present (`docker`, `nginx`, `curl`).
+
+---
+
+### Slack / Webhook Notifications
+
+Post to Slack (or any webhook) when a story completes, fails, or gets blocked. Useful for teams running overnight loops unattended.
+
+```json
+{ "webhook": "https://hooks.slack.com/services/...", "on": ["complete", "blocked"] }
+```
+
+---
+
+### Auto-Retry Blocked Stories
+
+A `--retry-blocked N` flag that re-attempts blocked stories up to N times before giving up, with the previous blocker message injected into the prompt for context.
+
+---
+
+### `ratchet rollback`
+
+Undo the last story's commit if the output is incorrect:
+
+```bash
+./ratchet_state.py rollback
+# git reverts last commit + resets story passes: false
+```
+
+---
+
+### Token Usage Tracking
+
+Log Claude API token consumption per iteration to `logs/usage.jsonl`. Surface estimated cost in `ratchet_state.py status`. Helps teams budget and optimize story sizing before committing to large runs.
+
+---
+
+### Audit Log
+
+Append a structured entry to `audit.jsonl` for every iteration: story ID, timestamp, model used, pass/fail, token count, commit hash. Useful for compliance, retrospectives, and cost tracking across projects.
+
+---
+
+### Secret Scanning at Loop Level
+
+Enforce secret detection as a hard gate in the orchestrator itself (not just the security skill). If the diff contains patterns matching API keys, tokens, or passwords, the loop aborts before committing regardless of what the agent decided.
+
+---
+
+### `pip install ratchet-loop` — Proper CLI Packaging
+
+Package Ratchet as an installable Python CLI so teams can use it from any directory without path management:
+
+```bash
+pip install ratchet-loop
+ratchet init --name "my-feature"
+ratchet add-story
+ratchet run --max-iter 20
+ratchet status
+```
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
