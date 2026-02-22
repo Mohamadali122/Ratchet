@@ -41,16 +41,25 @@ if (-not (Test-Path $Prd)) {
 }
 
 $Python = $null
-if (Get-Command python3 -ErrorAction SilentlyContinue) { $Python = 'python3' }
-elseif (Get-Command python -ErrorAction SilentlyContinue) { $Python = 'python' }
-else { Write-Error 'ERROR: python3 or python not found in PATH'; exit 1 }
+if ($env:VIRTUAL_ENV -and (Test-Path "$env:VIRTUAL_ENV\Scripts\python.exe")) {
+    $Python = "$env:VIRTUAL_ENV\Scripts\python.exe"
+} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    $Python = 'py'
+} elseif (Get-Command python3 -ErrorAction SilentlyContinue) {
+    $Python = 'python3'
+} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+    # Verify it is not the Windows Store stub
+    $null = & python -c "import sys; print(sys.executable)" 2>&1
+    if ($LASTEXITCODE -eq 0) { $Python = 'python' }
+}
+if (-not $Python) { Write-Error 'ERROR: Python not found. Activate a venv or install Python.'; exit 1 }
 
 $Invoke = "$Python `"$(Join-Path $ProjectDir 'ratchet_invoke.py')`""
 $State  = "$Python `"$(Join-Path $ProjectDir 'ratchet_state.py')`""
 
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 
-function Count-Incomplete {
+function Get-IncompleteCount {
     $prdData = Get-Content -Raw $Prd | ConvertFrom-Json
     return ($prdData.stories | Where-Object { -not $_.passes }).Count
 }
@@ -76,7 +85,7 @@ while ($iter -lt $MaxIter) {
     $iter++
     $ts = Get-Date -Format 'yyyyMMddTHHmmss'
 
-    $incomplete = Count-Incomplete
+    $incomplete = Get-IncompleteCount
     if ($incomplete -eq 0) {
         Write-Host "=== All stories complete after $($iter - 1) iteration(s). ==="
         exit 0
@@ -144,7 +153,10 @@ while ($iter -lt $MaxIter) {
             Invoke-Expression "$Invoke --tool '$Tool' --prompt '$Trigger'" 2>&1 |
                 Tee-Object -FilePath $Log -Append
         } catch {
-            Write-Host "WARNING: Invoke exited with error: $_"
+            $errMsg = "WARNING: Invoke exited with error: $_"
+            Write-Host $errMsg
+            New-Item -ItemType File -Force -Path $Log | Out-Null
+            Add-Content -Path $Log -Value $errMsg
         } finally {
             Pop-Location
         }

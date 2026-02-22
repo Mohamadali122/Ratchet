@@ -25,19 +25,22 @@ When invoked by `ratchet.sh`, execute these steps in order:
 1. **Read state files** — load `.ratchet/prd.json` (task list) and `.ratchet/progress.md` (accumulated learnings). Also load `.ratchet/company.md` if it exists.
 2. **Check out the branch** — run `git checkout <branchName>` from `prd.json`, creating it if absent (`git checkout -b`).
 3. **Pick the next story** — select the first story where `passes: false` (highest list priority = highest priority).
-4. **Implement the story** — write code, config, or scripts to satisfy every item in `acceptance_criteria`.
-5. **Run skill if applicable** — for infra changes load the relevant skill from `skills/`:
+4. **Validate the story** — run `skills/story-validator.md`. If BLOCKED (bad ACs or unmet deps): emit `BLOCKED:` and exit 1.
+5. **Implement the story** — write code, config, or scripts to satisfy every item in `acceptance_criteria`.
+6. **Generate tests** — run `skills/test-gen.md` for any code changes. All tests must pass before proceeding.
+7. **Run skill if applicable** — for infra changes load the relevant skill from `skills/`:
    - Docker changes → `skills/docker-verify.md`
    - nginx changes → `skills/nginx-test.md`
    - API/auth changes → `skills/api-test.md`
+   - Keycloak/SSO changes → `skills/keycloak-verify.md`
    - Any code change → `skills/security-scan.md` (always run before commit)
-6. **Run `./verify.sh`** — must return exit 0 before marking the story complete.
-7. **Mark story done** — set `"passes": true` for the story in `.ratchet/prd.json`.
-8. **Update progress** — append learnings, patterns, and gotchas to `.ratchet/progress.md`.
-9. **Commit** — use conventional commit format: `feat(scope): description` / `fix(scope): description`.
-10. **Signal completion:**
+8. **Run `./verify.sh`** — must return exit 0 before marking the story complete.
+9. **Mark story done** — set `"passes": true` for the story in `.ratchet/prd.json`.
+10. **Update progress** — use `skills/progress-writer.md` format to append structured learnings to `.ratchet/progress.md`.
+11. **Commit** — use conventional commit format: `feat(scope): description` / `fix(scope): description`.
+12. **Signal completion:**
     - If ALL stories now have `passes: true` → print exactly `COMPLETE` on its own line and exit 0.
-    - If you cannot complete the current story → print exactly `BLOCKED: <reason>` on its own line and exit 1.
+    - If you cannot complete the current story → run `skills/blocked-recovery.md` first, then if still stuck emit `BLOCKED: <reason>` on its own line and exit 1.
 
 **Never skip the security scan. Never hardcode secrets. Never commit credentials.**
 
@@ -148,11 +151,16 @@ ratchet.sh (loop)
 
 | Skill file | When to load |
 | --- | --- |
-| `skills/security-scan.md` | Before every commit |
+| `skills/security-scan.md` | Before every commit (mandatory) |
 | `skills/docker-verify.md` | After Docker Compose changes |
 | `skills/api-test.md` | After API or auth endpoint changes |
 | `skills/nginx-test.md` | After nginx config changes |
+| `skills/keycloak-verify.md` | After Keycloak realm/client/SSO changes |
 | `skills/prd-gen.md` | When generating a new PRD from scratch |
+| `skills/story-validator.md` | Before implementing any story -- validates ACs are testable |
+| `skills/blocked-recovery.md` | Before emitting BLOCKED -- attempt self-recovery first |
+| `skills/progress-writer.md` | When updating `.ratchet/progress.md` after any story outcome |
+| `skills/test-gen.md` | After implementing code -- generate tests before verify.sh |
 
 ---
 

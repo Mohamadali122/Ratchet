@@ -1,86 +1,85 @@
-# Ratchet — Autonomous AI Agent Loop
+# Ratchet — AI Agent Loop
 
-Ratchet turns any AI coding tool into a self-driving engineering team. You define a list of tasks (a PRD). Ratchet picks the next task, delegates it to a fresh AI instance, verifies the result, commits, and loops until everything is done — or it tells you exactly why it got stuck.
+So here's the idea. You have a project. Instead of spending hours prompting Claude back and forth, you write down what you want done as a list of tasks, point Ratchet at your project, and let it run. Ratchet keeps spawning AI agents, one task at a time (or several at once), until everything is done — or it tells you exactly where it got stuck.
 
-> Inspired by the [Ralph pattern](https://github.com/snarktank/ralph). Cross-platform: Linux, Mac, Windows (PowerShell + Git Bash).
+Think of it like a project manager that never sleeps, never forgets context, and signs off on every task before moving to the next one.
 
-**What makes Ratchet different:**
-
-- **Multi-LLM** — Claude, OpenAI, DeepSeek, Gemini, Ollama, LM Studio, Codex. Per-story model selection.
-- **Parallel execution** — dispatch independent stories simultaneously with `--parallel`.
-- **Web UI** — real-time dashboard with live log streaming, run/stop controls, story management.
-- **Verification gate** — HTTP checks, Docker health, JWT validation, custom shell commands before every commit.
-- **Authorization injection** — security and recon work handled safely via `company.md`.
+> Inspired by the [Ralph pattern](https://github.com/snarktank/ralph). Works on Linux, Mac, and Windows.
 
 ---
 
-## How It Works
+## What makes it different from just prompting Claude yourself?
+
+- **It loops.** One prompt → one story done → loop → next story. You walk away.
+- **It verifies.** Before marking anything done, it runs your actual checks (HTTP, Docker, custom scripts). No hallucinated "done".
+- **It remembers.** Learnings from each iteration get written to `progress.md` so the next agent knows what the previous one figured out.
+- **It parallelises.** Got 4 independent tasks? Fire 4 agents at the same time.
+- **It works with any AI.** Claude, GPT-4o, Gemini, DeepSeek, Ollama (local), LM Studio — swap at any time.
+- **It has a UI.** Real-time dashboard at `localhost:7433` if you don't want to stare at a terminal.
+
+---
+
+## How does it actually work?
 
 ```text
-You write .ratchet/prd.json     (stories with acceptance criteria, deps, model overrides)
-         .ratchet/company.md    (org standards, auth context)
-         .ratchet/verify.json   (what "done" looks like: HTTP/Docker/custom checks)
+You write a task list  →  prd.json
+You define "done"      →  verify.json
+You run ratchet        →  it does the rest
 
-ratchet.sh / ratchet.ps1
-
-  reads prd.json, finds ready stories (passes: false, deps satisfied)
-
-  serial mode:   picks highest-priority story, spawns one agent
-  parallel mode: dispatches ALL ready stories simultaneously
-
-  each agent (via ratchet_invoke.py):
-      reads CLAUDE.md (operating protocol)
-      implements the story (code, configs, scripts)
-      runs verify.sh / verify.ps1 (acceptance gate)
-      updates prd.json, progress.md
-      commits with conventional commit format
-      prints COMPLETE or BLOCKED: <reason>
-
-  on COMPLETE   loop, check remaining stories
-  on BLOCKED    record reason to progress.md, loop
-  exits when all stories pass OR max-iter reached
+For each iteration:
+  1. Find the next task that's ready (all its dependencies are done)
+  2. Spawn an AI agent with your task as a prompt
+  3. Agent writes the code / config / scripts
+  4. Agent runs your verify checks
+  5. If checks pass → mark task done, commit, loop
+  6. If checks fail → write why to progress.md, loop
+  7. Stop when everything is done (or you hit max iterations)
 ```
 
-Each iteration is logged to `logs/ratchet-TIMESTAMP[-STORYID].log`.
-Cross-iteration learnings accumulate in `.ratchet/progress.md`.
+Each run gets its own log file. The agent prints `COMPLETE` when it finishes a task, or `BLOCKED: <reason>` if it can't. The orchestrator reads that signal and decides what to do next.
 
 ---
 
-## Prerequisites
+## Before you start
 
-- `claude` CLI installed and authenticated — `claude --version`
-- Python >= 3.10 (`python3` or `python`)
-- `git` configured with user identity
-- **Linux / Mac / WSL:** `bash` >= 4.0
-- **Windows:** PowerShell 5.1+ (built-in) or Git Bash
-- **Web UI:** `pip install fastapi uvicorn`
-- **API providers:** `pip install openai` (for OpenAI, DeepSeek, LM Studio)
-- Optional: `shellcheck`, `mypy`, `docker`, `nginx`, `curl`, `ollama`
+You need:
+
+- `claude` CLI — install with `npm install -g @anthropic-ai/claude-code` then `claude auth`
+- Python 3.10+
+- git (with your name/email configured)
+
+Optional:
+
+- `pip install fastapi uvicorn` — for the web UI
+- `pip install openai` — for OpenAI, DeepSeek, or LM Studio
+- Docker, shellcheck, curl — depending on what your tasks need
 
 ---
 
-## Quick Start
+## Getting started
 
-### Linux / Mac / WSL / Git Bash
+### On Linux / Mac / WSL
 
 ```bash
 git clone https://github.com/Mohamadali122/Ratchet ratchet
 cd ratchet
 chmod +x ratchet.sh verify.sh ratchet_state.py
 
+# Go to your project
 cd /path/to/your/project
+
+# Set up the task list
 /path/to/ratchet/ratchet_state.py init --name "my-feature"
-/path/to/ratchet/ratchet_state.py add-story   # repeat for each task
+/path/to/ratchet/ratchet_state.py add-story   # run this once per task
+
+# Run it
 /path/to/ratchet/ratchet.sh --project-dir . --max-iter 20
 ```
 
-### Windows (PowerShell)
+### On Windows (PowerShell)
 
 ```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-
 git clone https://github.com/Mohamadali122/Ratchet ratchet
-cd ratchet
 
 cd C:\Projects\myapp
 python C:\path\to\ratchet\ratchet_state.py init --name "my-feature"
@@ -88,7 +87,7 @@ python C:\path\to\ratchet\ratchet_state.py add-story
 C:\path\to\ratchet\ratchet.ps1 -ProjectDir . -MaxIter 20
 ```
 
-### Web UI (Quick Start)
+### With the Web UI
 
 ```bash
 pip install fastapi uvicorn
@@ -98,73 +97,9 @@ python ratchet_ui.py --project-dir /path/to/project
 
 ---
 
-## Commands Reference
+## The task list — prd.json
 
-### State Management
-
-| Command | What it does |
-| --- | --- |
-| `ratchet_state.py init --name NAME` | Create `.ratchet/` with `prd.json` and `progress.md` |
-| `ratchet_state.py add-story` | Interactively add a story (criteria, deps, model override) |
-| `ratchet_state.py status` | Story table: ID, DONE/READY/WAITING, model, deps |
-| `ratchet_state.py reset --story S2` | Re-open a completed story |
-| `ratchet_state.py ready-stories` | Print IDs of stories whose deps are satisfied |
-| `ratchet_state.py mark-done --story S2` | Mark a story complete (used by parallel orchestrator) |
-| `ratchet_state.py doctor` | Preflight environment check |
-
-### Running the Loop
-
-```bash
-# Linux / Mac / Git Bash
-./ratchet.sh [--tool PROVIDER] [--max-iter N] [--project-dir PATH] [--parallel]
-
-# Windows PowerShell
-.\ratchet.ps1 [-Tool PROVIDER] [-MaxIter N] [-ProjectDir PATH] [-Parallel]
-
-# Verify checks only
-./verify.sh
-.\verify.ps1
-```
-
-### Web UI Dashboard
-
-```bash
-python ratchet_ui.py [--port 7433] [--host 127.0.0.1] [--project-dir PATH]
-```
-
----
-
-## Multi-LLM Support
-
-Ratchet routes every agent call through `ratchet_invoke.py`, a unified adapter that normalises the invocation convention for each provider.
-
-### Provider format: `provider` or `provider/model`
-
-| Provider | Format | Requirement |
-| --- | --- | --- |
-| Claude Code | `claude` | `claude` CLI authenticated |
-| Google Gemini | `gemini` or `gemini/gemini-2.0` | `gemini` CLI installed |
-| OpenAI Codex | `codex` | `codex` CLI installed |
-| Ollama (local) | `ollama/codellama`, `ollama/llama3` | `ollama` running locally |
-| OpenAI API | `openai/gpt-4o`, `openai/gpt-4-turbo` | `OPENAI_API_KEY` + `pip install openai` |
-| DeepSeek | `deepseek/deepseek-coder` | `DEEPSEEK_API_KEY` + `pip install openai` |
-| LM Studio | `lmstudio/mistral` | LM Studio server at localhost:1234 |
-
-```bash
-# CLI examples
-./ratchet.sh --tool claude
-./ratchet.sh --tool ollama/codellama
-./ratchet.sh --tool openai/gpt-4o
-./ratchet.sh --tool deepseek/deepseek-coder
-./ratchet.sh --tool lmstudio/mistral
-
-# List all supported providers
-python ratchet_invoke.py --list-tools
-```
-
-### Per-story model override
-
-Set a `model` field on any story in `prd.json` to override the loop-level `--tool` for that story only:
+This is the heart of everything. It lives in `.ratchet/prd.json` in your project.
 
 ```json
 {
@@ -173,151 +108,40 @@ Set a `model` field on any story in `prd.json` to override the loop-level `--too
   "stories": [
     {
       "id": "S1",
-      "title": "Scaffold boilerplate files",
-      "model": "ollama/codellama",
-      "acceptance_criteria": ["src/ directory created", "package.json valid"],
+      "title": "Set up the database schema",
+      "acceptance_criteria": [
+        "migrations/001_init.sql creates users and jobs tables",
+        "python -m py_compile check_db.py exits 0"
+      ],
+      "depends_on": [],
       "passes": false
     },
     {
       "id": "S2",
-      "title": "Implement complex auth logic",
-      "model": "openai/gpt-4o",
-      "acceptance_criteria": ["JWT validation passes", "tests exit 0"],
-      "passes": false
-    }
-  ]
-}
-```
-
-Cheap stories (boilerplate, docs) use a local model. Complex stories use a frontier model. Can cut API cost by 60–80% on large PRDs.
-
----
-
-## Parallel Story Execution
-
-Stories with satisfied dependencies run simultaneously when `--parallel` is set.
-
-### Declaring dependencies
-
-```json
-{
-  "id": "S3",
-  "title": "Wire auth to API",
-  "depends_on": ["S1", "S2"],
-  "acceptance_criteria": ["GET /me returns user object"],
-  "passes": false
-}
-```
-
-Ratchet builds a DAG from `depends_on` fields. On each iteration it finds all "ready" stories (not done, all deps done) and dispatches them in parallel. Each gets its own log file (`ratchet-TIMESTAMP-SID.log`).
-
-```bash
-./ratchet.sh --parallel --max-iter 20
-.\ratchet.ps1 -Parallel -MaxIter 20
-```
-
-Check which stories are currently ready without running:
-
-```bash
-./ratchet_state.py ready-stories
-```
-
----
-
-## Web UI Dashboard
-
-```bash
-pip install fastapi uvicorn
-python ratchet_ui.py --project-dir /path/to/project
-```
-
-Open **[http://localhost:7433](http://localhost:7433)**
-
-**Features:**
-
-- Story table with DONE / READY / WAITING badges, model and dep info
-- Stats row: complete / ready / total counts
-- Run Loop button with provider selector, max-iter, and parallel toggle
-- Stop button to terminate a running loop
-- Per-story Reset button
-- Live log stream with colour-coded output:
-  - Green — `COMPLETE`
-  - Red — `BLOCKED`
-  - Yellow — `WARNING`
-
-The dashboard polls `/api/status` every 2 seconds and streams logs via Server-Sent Events — no WebSockets, no build step.
-
----
-
-## Project Structure
-
-```text
-ratchet/
-├── ratchet.sh              # Orchestrator loop (Linux/Mac/Git Bash)
-├── ratchet.ps1             # Orchestrator loop (Windows PowerShell)
-├── ratchet_invoke.py       # Multi-LLM adapter (Claude/Ollama/OpenAI/DeepSeek/Gemini/...)
-├── ratchet_state.py        # State management CLI (cross-platform Python)
-├── ratchet_state.bat       # Windows CMD/PowerShell wrapper
-├── ratchet_ui.py           # Web UI dashboard (FastAPI + SSE)
-├── templates/
-│   └── index.html          # Dashboard UI (HTMX + Tailwind CSS)
-├── verify.sh               # Verification hook (Linux/Mac/Git Bash)
-├── verify.ps1              # Verification hook (Windows PowerShell)
-├── CLAUDE.md               # Agent operating protocol (auto-read by Claude Code)
-├── skills/
-│   ├── security-scan.md    # Secret detection, static analysis
-│   ├── docker-verify.md    # Container health checks
-│   ├── api-test.md         # HTTP + JWT endpoint validation
-│   ├── nginx-test.md       # nginx config + proxy routing
-│   └── prd-gen.md          # Guided PRD generation
-└── .ratchet/               # Per-project state directory
-    ├── prd.json            # Task list  (managed by ratchet_state.py)
-    ├── progress.md         # Cross-iteration learnings
-    ├── company.md          # Org standards, auth context
-    └── verify.json         # Acceptance gate configuration
-```
-
----
-
-## Configuration Files
-
-### `.ratchet/prd.json` — Task List
-
-```json
-{
-  "name": "feature-name",
-  "branchName": "feat/feature-name",
-  "stories": [
-    {
-      "id": "S1",
-      "title": "Action-oriented title",
+      "title": "Build the REST API",
       "acceptance_criteria": [
-        "Specific, testable criterion",
-        "Another criterion"
+        "GET /health returns 200",
+        "POST /jobs creates a record and returns the new ID"
       ],
-      "depends_on": [],
-      "model": "claude",
+      "depends_on": ["S1"],
       "passes": false
     }
   ]
 }
 ```
 
-`depends_on` and `model` are optional. Omit them to use list order and the loop-level `--tool`.
+A few things to know:
 
-### `.ratchet/company.md` — Org Context
+- `passes: false` means not done yet. The agent sets it to `true` when it finishes.
+- `depends_on` means "don't start this until those are done". Leave it empty if the task has no dependencies.
+- `acceptance_criteria` are the actual tests the agent runs to verify its work. Be specific — vague criteria lead to vague results.
+- You can also add a `model` field per story if you want a specific AI for that task (more on that below).
 
-Loaded into every agent iteration. Use it to encode:
+---
 
-- Coding standards and style preferences
-- Git conventions
-- Secret management rules
-- Infrastructure conventions
-- **Authorization context** for security work
+## The verification gate — verify.json
 
-Any line starting with `- Authorization:` is forwarded directly into the trigger prompt so the agent sees it before applying any independent judgment.
-
-### `.ratchet/verify.json` — Acceptance Gate
+Before marking any task done, Ratchet runs the checks in `.ratchet/verify.json`. If anything fails, the task doesn't pass.
 
 ```json
 {
@@ -327,278 +151,286 @@ Any line starting with `- Authorization:` is forwarded directly into the trigger
   "docker_services": ["api", "db"],
   "jwt_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/token",
   "custom_checks": [
-    { "name": "output file exists",      "command": "test -s output/result.txt" },
-    { "name": "no syntax errors",        "command": "python -m py_compile main.py" },
-    { "name": "required header present", "command": "grep -q 'X-Request-ID' src/middleware.py" }
+    { "name": "output file exists",  "command": "test -s output/result.txt" },
+    { "name": "no syntax errors",    "command": "python -m py_compile main.py" }
   ]
 }
 ```
+
+On Windows, use Python one-liners in custom_checks instead of bash:
+
+```json
+{ "name": "file exists", "command": "python -c \"import sys,os; sys.exit(0 if os.path.exists('output/result.txt') else 1)\"" }
+```
+
+---
+
+## Running it
+
+```bash
+# Linux / Mac
+./ratchet.sh --tool claude --max-iter 20 --project-dir .
+
+# Windows PowerShell
+.\ratchet.ps1 -Tool claude -MaxIter 20 -ProjectDir .
+
+# Run multiple tasks at the same time (parallel mode)
+./ratchet.sh --parallel --max-iter 20
+.\ratchet.ps1 -Parallel -MaxIter 20
+```
+
+---
+
+## Parallel mode — running tasks simultaneously
+
+If you have tasks that don't depend on each other, Ratchet can run them at the same time. Say you have:
+
+```text
+S1 → foundation (must go first)
+S2 → nginx config  (needs S1)
+S3 → Dockerfile    (needs S1)
+S4 → CI pipeline   (needs S2 and S3)
+```
+
+With `--parallel`, as soon as S1 is done, S2 and S3 both start immediately — two Claude agents working at the same time. Once both are done, S4 starts. This can cut your total runtime roughly in half on a typical project.
+
+Each parallel story gets its own log file so nothing gets mixed up.
 
 ---
 
 ## Skills
 
-Skills are Markdown prompt files the agent loads on demand for domain-specific tasks:
+Skills are Markdown prompt files in `skills/` that the agent loads at specific points in the protocol. You don't call them manually — `CLAUDE.md` tells the agent exactly when to load each one.
 
-| Skill | Loaded when |
+| Skill | When the agent loads it |
 | --- | --- |
-| `skills/security-scan.md` | Before every commit — bandit, semgrep, shellcheck, secret detection |
-| `skills/docker-verify.md` | After any Docker Compose change |
-| `skills/api-test.md` | After any API or auth endpoint change |
-| `skills/nginx-test.md` | After any nginx config change |
-| `skills/prd-gen.md` | When generating a new PRD from scratch |
+| `story-validator.md` | Before writing a single line of code — checks acceptance criteria are testable and all deps are satisfied |
+| `test-gen.md` | After implementing — generates pytest, curl, and bash tests before verify runs |
+| `security-scan.md` | Before every commit — bandit, semgrep, shellcheck, secret detection |
+| `blocked-recovery.md` | Before giving up — self-diagnosis checklist to attempt recovery before emitting BLOCKED |
+| `progress-writer.md` | After every story outcome — enforces a structured format so cross-iteration memory is actually useful |
+| `docker-verify.md` | After any Docker Compose change |
+| `nginx-test.md` | After any nginx config change |
+| `api-test.md` | After any API or auth endpoint change |
+| `keycloak-verify.md` | After any Keycloak realm, client, or SSO change — validates token, roles, protected endpoints |
+| `prd-gen.md` | When generating a new PRD from scratch |
 
-Add your own by dropping a `.md` file in `skills/` and referencing it in `CLAUDE.md`.
+To add your own: drop a `.md` file in `skills/` and reference it in `CLAUDE.md` under step 7.
 
 ---
 
-## Environment Variables
+## Using different AI models
+
+You can use any of these as your agent:
+
+| Provider | What to pass | What you need |
+| --- | --- | --- |
+| Claude | `claude` | `claude` CLI authenticated |
+| OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` env var |
+| DeepSeek | `deepseek/deepseek-coder` | `DEEPSEEK_API_KEY` env var |
+| Gemini | `gemini` | `gemini` CLI installed |
+| Ollama (local) | `ollama/llama3` | Ollama running locally |
+| LM Studio | `lmstudio/mistral` | LM Studio server at localhost:1234 |
+| Codex | `codex` | `codex` CLI installed |
 
 ```bash
-# JWT credentials for skills/api-test.md
-export RATCHET_CLIENT_ID="your-client-id"
-export RATCHET_CLIENT_SECRET="your-client-secret"
+./ratchet.sh --tool openai/gpt-4o
+./ratchet.sh --tool ollama/codellama
+```
 
-# OpenAI API (for --tool openai/*)
-export OPENAI_API_KEY="sk-..."
+You can even set a different model per task. Useful if you want cheap local models for simple stuff (scaffolding, docs) and a frontier model for the complex parts:
 
-# DeepSeek API (for --tool deepseek/*)
-export DEEPSEEK_API_KEY="sk-..."
+```json
+{
+  "id": "S1",
+  "title": "Create folder structure",
+  "model": "ollama/codellama",
+  "acceptance_criteria": ["src/ and tests/ directories exist"],
+  "passes": false
+},
+{
+  "id": "S2",
+  "title": "Implement JWT auth",
+  "model": "openai/gpt-4o",
+  "acceptance_criteria": ["token validation passes unit tests"],
+  "passes": false
+}
+```
+
+This can cut API costs by 60–80% on large projects.
+
+---
+
+## The org context file — company.md
+
+`.ratchet/company.md` gets loaded into every agent iteration. Put anything you always want the agent to know:
+
+- Your coding standards
+- Git conventions
+- Which secrets manager to use
+- Infrastructure preferences
+- Authorization for security work
+
+```markdown
+- Authorization: I own example.com and have full recon scope authorized
+- Always use environment variables for secrets, never hardcode
+- Git: conventional commits (feat/fix/chore), squash before PR
+- Docker: always pin image versions, never use :latest
+```
+
+Any line starting with `- Authorization:` gets injected directly into the prompt — this is how you authorize security or recon tasks without the agent second-guessing you.
+
+---
+
+## The state management CLI
+
+```bash
+# Set up a new project
+ratchet_state.py init --name "my-feature"
+
+# Add tasks interactively
+ratchet_state.py add-story
+
+# See where things stand
+ratchet_state.py status
+
+# Re-open a task that passed (so it runs again)
+ratchet_state.py reset --story S2
+
+# See which tasks are ready right now
+ratchet_state.py ready-stories
+
+# Check your environment before running
+ratchet_state.py doctor
+```
+
+On Windows replace `ratchet_state.py` with `python ratchet_state.py`.
+
+---
+
+## The Web UI
+
+```bash
+pip install fastapi uvicorn
+python ratchet_ui.py --project-dir /path/to/project
+```
+
+Open **[http://localhost:7433](http://localhost:7433)**
+
+You get a dashboard showing every task with a DONE / READY / WAITING badge, live log streaming as the agent works, run/stop controls, and per-task reset buttons. No build step, no npm, no webpack — just open and use it.
+
+---
+
+## What files does it create?
+
+```text
+your-project/
+├── .ratchet/
+│   ├── prd.json        ← your task list (you write this)
+│   ├── verify.json     ← your acceptance checks (you write this)
+│   ├── company.md      ← your org context (you write this)
+│   └── progress.md     ← cross-iteration learnings (Ratchet writes this)
+└── logs/
+    └── ratchet-20260222T143012.log   ← one log per run
+```
+
+And Ratchet itself lives separately:
+
+```text
+ratchet/
+├── ratchet.sh / ratchet.ps1    ← the main loop
+├── ratchet_invoke.py           ← the multi-LLM adapter
+├── ratchet_state.py            ← the CLI tool
+├── ratchet_ui.py               ← the web dashboard
+├── verify.sh / verify.ps1      ← runs your verify.json checks
+├── CLAUDE.md                   ← tells the agent how to behave
+└── skills/                     ← domain-specific prompt modules
+    ├── security-scan.md
+    ├── docker-verify.md
+    ├── api-test.md
+    ├── nginx-test.md
+    └── prd-gen.md
 ```
 
 ---
 
-## Use Cases
+## What can you use it for?
 
-Ratchet works on any project where you can express "done" as a set of verifiable criteria.
+Honestly anything where you can write "done" as a testable condition. Here are some real examples:
 
----
-
-### DevOps — Deploy a New Service
-
-**Scenario:** Stand up a new Nextcloud instance behind nginx with Keycloak SSO.
+### Stand up a new service (DevOps)
 
 ```text
-S1 — Write docker-compose.yml for Nextcloud + postgres
-     criteria: docker compose up succeeds, postgres is healthy
-
-S2 — Configure nginx reverse proxy with SSL
-     criteria: nginx -t passes, https://cloud.example.com returns 200
-
-S3 — Wire Keycloak OIDC as login provider  [depends_on: S1, S2]
-     criteria: /apps/sociallogin config present, JWT endpoint returns 200
-
-S4 — Set up automated daily backup to S3  [depends_on: S1]
-     criteria: backup.sh exists, cron entry present, dry-run exits 0
+S1 → docker-compose.yml for app + postgres
+S2 → nginx reverse proxy config
+S3 → Keycloak SSO wiring        (needs S1, S2)
+S4 → automated S3 backups       (needs S1)
 ```
 
-Run with `--parallel` and S3/S4 dispatch simultaneously once S1 and S2 are done.
-
----
-
-### SecOps — Subdomain Reconnaissance (Authorized)
-
-**company.md:**
+### Subdomain recon (SecOps / pentest)
 
 ```text
-- Authorization: I own example.com; full recon scope authorized
-- Rate limit: max 10 req/s to any external API
-- Output directory: output/ (gitignored)
+S1 → passive enumeration (crt.sh, SecurityTrails)
+S2 → DNS brute-force
+S3 → HTTP probe all results      (needs S1, S2)
+S4 → generate markdown report   (needs S3)
 ```
 
+### Build a REST API feature
+
 ```text
-S1 — Passive enumeration via crt.sh, SecurityTrails, HackerTarget
-     criteria: output/passive.txt exists and is non-empty
+S1 → add GET /search endpoint
+S2 → add full-text database index   (needs S1)
+S3 → add rate limiting              (needs S1)
+S4 → write integration tests        (needs S2, S3)
+```
 
-S2 — DNS brute-force with embedded wordlist using aiodns
-     criteria: output/bruteforce.txt has subdomain+IP pairs
+### Terraform module
 
-S3 — HTTP probe all discovered subdomains  [depends_on: S1, S2]
-     criteria: output/alive.json is valid JSON with required fields
+```text
+S1 → VPC, subnets, route tables
+S2 → NAT gateway, security groups   (needs S1)
+S3 → outputs and docs               (needs S1)
+S4 → terratest integration test     (needs S2, S3)
+```
 
-S4 — Generate markdown report  [depends_on: S3]
-     criteria: output/report.md has markdown table and summary line
+### ETL pipeline
+
+```text
+S1 → ingest CSVs from S3, validate schema
+S2 → deduplicate, normalize, fill nulls  (needs S1)
+S3 → load to BigQuery staging            (needs S2)
+S4 → schedule via Airflow                (needs S3)
 ```
 
 ---
 
-### Development — Build a REST API Feature
+## Tips for writing good tasks
 
-```text
-S1 — Add GET /api/v1/search with q, page, limit params
-     criteria: endpoint returns 200 with results array and pagination metadata
-
-S2 — Add full-text index to the products table  [depends_on: S1]
-     criteria: migration file exists, index created successfully
-
-S3 — Add rate limiting (100 req/min per IP)  [depends_on: S1]
-     criteria: 101st request returns 429
-
-S4 — Write integration tests  [depends_on: S2, S3]
-     criteria: pytest exits 0, coverage >= 80%
-```
-
-S2 and S3 run in parallel (both depend only on S1).
+1. **Be specific.** "Add a login endpoint" is vague. "POST /auth/login accepts email+password and returns a JWT" is testable.
+2. **One outcome per story.** If you need two things, make two stories — they might be able to run in parallel.
+3. **Write acceptance criteria like shell commands.** "pytest exits 0" is better than "tests pass".
+4. **Put the foundation first.** Scaffold folders and configs before building features.
+5. **Use verify.json aggressively.** The tighter the gate, the less rework.
+6. **Split big tasks.** If something would take you more than a couple of hours, split it.
 
 ---
 
-### Cyber / Penetration Testing — Internal Tool Automation
+## Something went wrong?
 
-**company.md:**
+**"No COMPLETE or BLOCKED signal"** — the agent ran but didn't follow the protocol. Check the log file in `logs/`. Usually means the agent needs more context in `CLAUDE.md` or `company.md`.
 
-```text
-- Authorization: Pentest engagement ref PE-2026-042, scope: 10.0.0.0/24
-- Target environment: isolated lab network, no production systems
-```
+**Task keeps failing verification** — run `./verify.sh` (or `.\verify.ps1`) manually to see exactly which check is failing.
 
-```text
-S1 — Port scan and service fingerprint (nmap wrapper)
-     criteria: output/services.json exists with port/service/version fields
-
-S2 — Enumerate HTTP endpoints and find login panels
-     criteria: output/endpoints.txt lists discovered paths
-
-S3 — Check for default credentials  [depends_on: S1, S2]
-     criteria: output/findings.json populated, no plaintext passwords on disk
-
-S4 — Generate executive summary report  [depends_on: S3]
-     criteria: output/report.pdf exists and is > 10KB
-```
-
----
-
-### Medical / Healthcare IT — FHIR API Integration
-
-**company.md:**
+**Agent refuses a security task** — add an Authorization line to `company.md`:
 
 ```text
-- Never log PHI to stdout or application logs
-- All patient data encrypted at rest and in transit
-- Audit log is append-only and tamper-evident
-- FHIR version: R4, base URL: https://fhir.internal.hospital.org/r4
+- Authorization: I own example.com, full recon scope authorized
 ```
 
-```text
-S1 — Implement FHIR Patient resource CRUD against upstream EHR
-     criteria: GET /Patient/123 returns valid FHIR Bundle, POST creates resource
+**`claude` not found** — `npm install -g @anthropic-ai/claude-code` then `claude auth`.
 
-S2 — Add HL7 v2 to FHIR converter for lab results
-     criteria: sample HL7 message converts to valid Observation resource
-
-S3 — Implement audit logging for all PHI access (HIPAA)  [depends_on: S1]
-     criteria: every API call writes to audit.log with user, action, timestamp, patient ID
-
-S4 — Encrypt PHI fields at rest  [depends_on: S1]
-     criteria: database dump shows encrypted values, decrypt function passes unit tests
-```
-
----
-
-### n8n / Workflow Automation — Build a Custom Node
-
-```text
-S1 — Scaffold n8n-nodes-myapi package with TypeScript boilerplate
-     criteria: npm run build exits 0, node appears in n8n node list
-
-S2 — Implement authentication (API key, n8n credentials)
-     criteria: credential type registered, test connection returns success
-
-S3 — Add List, Get, Create, Update, Delete operations  [depends_on: S1, S2]
-     criteria: each operation has correct mapping, unit tests pass
-
-S4 — Publish to npm and write usage docs  [depends_on: S3]
-     criteria: npm publish succeeds, README has quickstart example
-```
-
----
-
-### Data Engineering — Build an ETL Pipeline
-
-```text
-S1 — Ingest raw CSV files from S3 and validate schema
-     criteria: ingestion script exits 0, invalid rows written to quarantine/
-
-S2 — Transform: deduplicate, normalize dates, fill nulls  [depends_on: S1]
-     criteria: output row count matches expected, no null primary keys
-
-S3 — Load into BigQuery staging table  [depends_on: S2]
-     criteria: bq show staging.events succeeds, row count matches
-
-S4 — Schedule via Airflow DAG  [depends_on: S3]
-     criteria: dag.py parses without error, schedule_interval == @daily
-```
-
----
-
-### Infrastructure as Code — Terraform Module
-
-```text
-S1 — Define VPC, subnets, route tables
-     criteria: terraform validate passes, terraform plan shows expected resources
-
-S2 — Add NAT gateway, Internet gateway, security groups  [depends_on: S1]
-     criteria: no open 0.0.0.0/0 ingress rules except ports 80/443
-
-S3 — Add outputs: VPC ID, subnet IDs, security group IDs  [depends_on: S1]
-     criteria: all outputs declared, terraform-docs generates valid README
-
-S4 — Write terratest integration test  [depends_on: S2, S3]
-     criteria: go test ./... exits 0 against sandbox AWS account
-```
-
-S2 and S3 run in parallel.
-
----
-
-### SRE / Observability — Add Monitoring Stack
-
-```text
-S1 — Add /metrics endpoint to the API (Prometheus format)
-     criteria: curl localhost:8000/metrics returns # HELP lines
-
-S2 — Deploy Prometheus with scrape config  [depends_on: S1]
-     criteria: Prometheus UI shows target as UP
-
-S3 — Import Grafana dashboard  [depends_on: S2]
-     criteria: dashboard JSON valid, panels visible via Grafana API
-
-S4 — Configure alerting rule: error rate > 1% for 5m  [depends_on: S2]
-     criteria: alert rule YAML valid, appears in Prometheus rules list
-```
-
----
-
-## Tips for Writing Good Stories
-
-1. **One verifiable outcome per story.** If you need two things, make two stories.
-2. **Acceptance criteria are shell commands.** Phrase them so they map directly to `custom_checks`.
-3. **Declare dependencies explicitly.** Use `depends_on` instead of relying on list order.
-4. **Front-load the foundation.** Scaffold before you build features.
-5. **Keep stories under ~2 hours of human work.** If it's bigger, split it.
-6. **Use `verify.json` aggressively.** The tighter the acceptance gate, the less rework.
-7. **Use cheap models for boilerplate.** Set `model: ollama/codellama` on scaffolding stories.
-
----
-
-## Troubleshooting
-
-**"No COMPLETE or BLOCKED signal"** — the agent ran but didn't follow the protocol. Check `logs/ratchet-TIMESTAMP.log`. The agent may need more context in `CLAUDE.md` or `.ratchet/company.md`.
-
-**Story stays incomplete** — run `./verify.sh` manually to see which checks fail. Check `.ratchet/progress.md` for recorded blockers.
-
-**Agent refuses a security task** — add an `Authorization:` line to `.ratchet/company.md`:
-
-```text
-- Authorization: I own example.com; full recon scope authorized
-```
-
-**Parallel mode: stories conflict on git** — parallel agents committing to the same branch can occasionally conflict. Reset the failing story and re-run serially for that story only.
-
-**API provider not working** — check the required env var is set (`OPENAI_API_KEY`, `DEEPSEEK_API_KEY`) and `pip install openai` is done. Run `python ratchet_invoke.py --list-tools` to see all providers.
-
-**Web UI not starting** — run `pip install fastapi uvicorn` first.
-
-**`claude` not found** — install: `npm install -g @anthropic-ai/claude-code`, then `claude auth`.
+**Parallel agents conflict on git** — happens occasionally when two agents commit at the same time. Reset the failing story and re-run without `--parallel` for just that story.
 
 **PowerShell "not digitally signed":**
 
@@ -606,7 +438,7 @@ S4 — Configure alerting rule: error rate > 1% for 5m  [depends_on: S2]
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-**Run preflight check:**
+**Not sure if your environment is set up correctly:**
 
 ```bash
 ./ratchet_state.py doctor
@@ -614,57 +446,48 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ---
 
-## Extending Ratchet
-
-### Add a Custom Skill
-
-Create `skills/my-domain.md` with instructions for the agent, then reference it in `CLAUDE.md`:
-
-```markdown
-5. Run skill if applicable:
-   - My domain changes -> `skills/my-domain.md`
-```
-
-### Add a New LLM Provider
-
-Add a function to `ratchet_invoke.py` and register it in `_DISPATCH`:
-
-```python
-def invoke_myprovider(model: str, prompt: str) -> int:
-    return subprocess.call(["myprovider", "--prompt", prompt])
-
-_DISPATCH["myprovider"] = invoke_myprovider
-```
-
-Then use it with `--tool myprovider` or `--tool myprovider/model-name`.
-
-### Chain Multiple Projects
+## Environment variables
 
 ```bash
-./ratchet.sh --project-dir /srv/project-a --max-iter 20
-./ratchet.sh --project-dir /srv/project-b --max-iter 20
+RATCHET_CLIENT_ID       # JWT client ID (for api-test.md skill)
+RATCHET_CLIENT_SECRET   # JWT client secret (for api-test.md skill)
+OPENAI_API_KEY          # needed for --tool openai/*
+DEEPSEEK_API_KEY        # needed for --tool deepseek/*
 ```
 
 ---
 
-## Future Work
+## Adding your own stuff
 
-Contributions are welcome.
+**Custom skill** — drop a `.md` file in `skills/` with instructions, then reference it in `CLAUDE.md`. The agent will load it when relevant.
 
-| Item | Status |
+**New AI provider** — add a function to `ratchet_invoke.py` and register it:
+
+```python
+def invoke_myprovider(model: str, prompt: str) -> int:
+    return _run(["myprovider", "--prompt", prompt])
+
+_DISPATCH["myprovider"] = invoke_myprovider
+```
+
+Then `--tool myprovider` or `--tool myprovider/model-name` works automatically.
+
+---
+
+## What's coming next
+
+| Feature | Status |
 | --- | --- |
-| Multi-LLM support (Claude, OpenAI, DeepSeek, Gemini, Ollama, LM Studio) | **Done** |
-| Web UI dashboard (FastAPI + HTMX + SSE log streaming) | **Done** |
-| Parallel story execution with `depends_on` DAG | **Done** |
-| `ratchet doctor` preflight check | **Done** |
-| Story dependency graph (DAG-aware scheduling) | **Done** |
-| `pip install ratchet-loop` — proper CLI packaging | Planned |
-| Slack / webhook notifications on complete / blocked | Planned |
-| Auto-retry blocked stories (`--retry-blocked N`) | Planned |
-| `ratchet rollback` — undo last story commit | Planned |
-| Token usage tracking per iteration | Planned |
-| Audit log (`audit.jsonl`) for compliance | Planned |
-| Secret scanning as hard gate in orchestrator | Planned |
+| Multi-LLM (Claude, OpenAI, DeepSeek, Gemini, Ollama, LM Studio) | Done |
+| Web UI dashboard with live log streaming | Done |
+| Parallel execution with dependency graph | Done |
+| `ratchet doctor` preflight check | Done |
+| `pip install ratchet-loop` packaging | Planned |
+| Slack / webhook notifications | Planned |
+| Auto-retry blocked stories | Planned |
+| `ratchet rollback` — undo last commit | Planned |
+| Token usage tracking | Planned |
+| Secret scanning as a hard gate | Planned |
 
 ---
 

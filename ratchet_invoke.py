@@ -30,10 +30,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
+
+_WINDOWS = platform.system() == "Windows"
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +67,27 @@ def _parse_tool(tool: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 def _run(cmd: list[str]) -> int:
-    return subprocess.call(cmd)
+    """Run a CLI command, streaming its output through Python's stdout so the
+    orchestrator pipe (Tee-Object / tee) can capture it into the log file."""
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            shell=_WINDOWS,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        assert proc.stdout is not None
+        while True:
+            chunk = proc.stdout.read(4096)
+            if not chunk:
+                break
+            sys.stdout.buffer.write(chunk)
+            sys.stdout.buffer.flush()
+        proc.wait()
+        return proc.returncode
+    except FileNotFoundError:
+        print(f"ERROR: Command not found: {cmd[0]!r}. Is it installed and in PATH?", file=sys.stderr)
+        return 127
 
 
 def invoke_claude(model: str, prompt: str) -> int:
